@@ -108,6 +108,7 @@ def _download_video(url, output_dir, quality):
         # Поддержка сайтов без прямых ссылок
         "geo_bypass": True,
         "nocheckcertificate": True,
+        "extractor_args": {"generic": {"impersonate": ["chrome"]}},
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
