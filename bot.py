@@ -1,6 +1,8 @@
 import os
 import glob
 import tempfile
+import time
+from collections import defaultdict
 import yt_dlp
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -9,6 +11,22 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 user_urls = {}
+
+# Защита от спама
+user_requests = defaultdict(list)
+MAX_REQUESTS = 3
+TIME_WINDOW = 60
+
+def is_spam(user_id):
+    now = time.time()
+    requests = user_requests[user_id]
+    requests = [t for t in requests if now - t < TIME_WINDOW]
+    user_requests[user_id] = requests
+    if len(requests) >= MAX_REQUESTS:
+        return True
+    requests.append(now)
+    user_requests[user_id] = requests
+    return False
 
 def make_keyboard():
     kb = InlineKeyboardMarkup(row_width=2)
@@ -43,18 +61,31 @@ def download_audio(url, output_dir):
         title = info.get("title", "audio")
     mp3_files = glob.glob(os.path.join(output_dir, "*.mp3"))
     if not mp3_files:
-        raise Exception("MP3 файл не найден после конвертации")
+        raise Exception("MP3 файл не найден")
     return mp3_files[0], title
 
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
-    await message.answer("Привет! Отправь ссылку на видео.")
+    await message.answer(
+        "Привет! 👋
+"
+        "Отправь ссылку на видео — выберешь формат и качество.
+
+"
+        "Поддерживаются: YouTube, TikTok, Instagram, Twitter/X, ВКонтакте и 1000+ сайтов.
+
+"
+        "Лимит: 3 запроса в минуту."
+    )
 
 @dp.message_handler()
 async def handle_url(message: types.Message):
     url = message.text.strip()
     if not url.startswith(("http://", "https://")):
         await message.answer("Отправь ссылку начинающуюся с http")
+        return
+    if is_spam(message.from_user.id):
+        await message.answer("Слишком много запросов! Подожди минуту и попробуй снова.")
         return
     user_urls[message.from_user.id] = url
     await message.answer("Выбери формат:", reply_markup=make_keyboard())
