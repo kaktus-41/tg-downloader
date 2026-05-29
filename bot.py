@@ -1,8 +1,10 @@
 import os
 import glob
+import asyncio
 import tempfile
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 import yt_dlp
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -11,21 +13,18 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 user_urls = {}
-
-# Защита от спама
 user_requests = defaultdict(list)
 MAX_REQUESTS = 3
 TIME_WINDOW = 60
+executor_pool = ThreadPoolExecutor(max_workers=3)
 
 def is_spam(user_id):
     now = time.time()
-    requests = user_requests[user_id]
-    requests = [t for t in requests if now - t < TIME_WINDOW]
-    user_requests[user_id] = requests
-    if len(requests) >= MAX_REQUESTS:
+    reqs = [t for t in user_requests[user_id] if now - t < TIME_WINDOW]
+    user_requests[user_id] = reqs
+    if len(reqs) >= MAX_REQUESTS:
         return True
-    requests.append(now)
-    user_requests[user_id] = requests
+    user_requests[user_id].append(now)
     return False
 
 def make_keyboard():
@@ -38,7 +37,7 @@ def make_keyboard():
     )
     return kb
 
-def download_video(url, output_dir, quality):
+def _download_video(url, output_dir, quality):
     fmt = {"360": "bestvideo[height<=360]+bestaudio/best", "720": "bestvideo[height<=720]+bestaudio/best"}.get(quality, "bestvideo+bestaudio/best")
     ydl_opts = {"outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"), "format": fmt, "merge_output_format": "mp4", "quiet": True, "no_warnings": True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -48,7 +47,7 @@ def download_video(url, output_dir, quality):
             filename = filename.rsplit(".", 1)[0] + ".mp4"
         return filename, info.get("title", "video")
 
-def download_audio(url, output_dir):
+def _download_audio(url, output_dir):
     ydl_opts = {
         "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
         "format": "bestaudio/best",
@@ -67,14 +66,9 @@ def download_audio(url, output_dir):
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Привет! 👋
-"
-        "Отправь ссылку на видео — выберешь формат и качество.
-
-"
-        "Поддерживаются: YouTube, TikTok, Instagram, Twitter/X, ВКонтакте и 1000+ сайтов.
-
-"
+        "Привет! 👋\n"
+        "Отправь ссылку на видео.\n\n"
+        "Поддерживаются: YouTube, TikTok, Instagram, Twitter/X и 1000+ сайтов.\n"
         "Лимит: 3 запроса в минуту."
     )
 
@@ -85,7 +79,7 @@ async def handle_url(message: types.Message):
         await message.answer("Отправь ссылку начинающуюся с http")
         return
     if is_spam(message.from_user.id):
-        await message.answer("Слишком много запросов! Подожди минуту и попробуй снова.")
+        await message.answer("Слишком много запросов! Подожди минуту.")
         return
     user_urls[message.from_user.id] = url
     await message.answer("Выбери формат:", reply_markup=make_keyboard())
@@ -98,11 +92,12 @@ async def process_callback(callback: types.CallbackQuery):
         await callback.message.edit_text("Сначала отправь ссылку!")
         return
     await callback.message.edit_text("Скачиваю...")
+    loop = asyncio.get_event_loop()
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             if callback.data.startswith("video_"):
                 quality = callback.data.split("_")[1]
-                filepath, title = download_video(url, tmpdir, quality)
+                filepath, title = await loop.run_in_executor(executor_pool, _download_video, url, tmpdir, quality)
                 file_size = os.path.getsize(filepath)
                 if file_size > 50 * 1024 * 1024:
                     await callback.message.edit_text("Файл больше 50 МБ, попробуй качество пониже.")
@@ -111,7 +106,7 @@ async def process_callback(callback: types.CallbackQuery):
                 with open(filepath, "rb") as f:
                     await bot.send_video(callback.message.chat.id, f, caption=title)
             else:
-                filepath, title = download_audio(url, tmpdir)
+                filepath, title = await loop.run_in_executor(executor_pool, _download_audio, url, tmpdir)
                 file_size = os.path.getsize(filepath)
                 if file_size > 50 * 1024 * 1024:
                     await callback.message.edit_text("Файл больше 50 МБ.")
