@@ -10,3 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 CMD ["python3", "bot.py"]
+# cache bust Fri May 29 16:08:16 +05 2026
