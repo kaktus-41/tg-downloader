@@ -12,10 +12,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-API_ID = os.getenv("API_ID")
-API_HASH = os.getenv("API_HASH")
 
-# Используем локальный Bot API сервер для файлов до 2 ГБ
 bot = Bot(token=BOT_TOKEN, server=types.base.TelegramAPIServer(
     base="http://localhost:8081/bot{token}",
     file="http://localhost:8081/file/bot{token}/{path}"
@@ -28,7 +25,8 @@ MAX_REQUESTS = 3
 TIME_WINDOW = 60
 executor_pool = ThreadPoolExecutor(max_workers=3)
 STATS_FILE = "stats.json"
-MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB
+MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
+PLAYLIST_LIMIT = 20
 
 def load_stats():
     if os.path.exists(STATS_FILE):
@@ -65,34 +63,15 @@ def is_spam(user_id):
     user_requests[user_id].append(now)
     return False
 
-def make_format_keyboard():
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("🎬 360p", callback_data="video_360"),
-        InlineKeyboardButton("🎬 720p", callback_data="video_720"),
-        InlineKeyboardButton("🎬 1080p", callback_data="video_1080"),
-        InlineKeyboardButton("🎵 MP3", callback_data="audio_mp3"),
-    )
-    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="cancel"))
-    return kb
+def is_playlist(url):
+    return "playlist" in url or "list=" in url
 
-def make_main_keyboard():
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton("📥 Как скачать", callback_data="how_to"),
-        InlineKeyboardButton("🌍 Поддерживаемые сайты", callback_data="sites"),
-        InlineKeyboardButton("❓ Помощь", callback_data="help"),
-    )
-    return kb
-
-def make_admin_keyboard():
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
-        InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast"),
-        InlineKeyboardButton("🔄 Сбросить статистику", callback_data="admin_reset"),
-    )
-    return kb
+def get_playlist_info(url):
+    ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "playlistend": PLAYLIST_LIMIT}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        entries = info.get("entries", [])
+        return info.get("title", "Плейлист"), len(entries), entries
 
 def _download_video(url, output_dir, quality):
     fmt = {
@@ -105,10 +84,8 @@ def _download_video(url, output_dir, quality):
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
-        # Поддержка сайтов без прямых ссылок
         "geo_bypass": True,
         "nocheckcertificate": True,
-        "extractor_args": {"generic": {"impersonate": ["chrome"]}},
         "extractor_args": {"generic": {"impersonate": ["chrome"]}},
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -127,7 +104,6 @@ def _download_audio(url, output_dir):
         "no_warnings": True,
         "geo_bypass": True,
         "nocheckcertificate": True,
-        "extractor_args": {"generic": {"impersonate": ["chrome"]}},
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -137,18 +113,55 @@ def _download_audio(url, output_dir):
         raise Exception("MP3 файл не найден")
     return mp3_files[0], title
 
+def make_format_keyboard():
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("🎬 360p", callback_data="video_360"),
+        InlineKeyboardButton("🎬 720p", callback_data="video_720"),
+        InlineKeyboardButton("🎬 1080p", callback_data="video_1080"),
+        InlineKeyboardButton("🎵 MP3", callback_data="audio_mp3"),
+    )
+    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="cancel"))
+    return kb
+
+def make_playlist_keyboard():
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("🎬 Скачать все видео 720p", callback_data="playlist_video"),
+        InlineKeyboardButton("🎵 Скачать все MP3", callback_data="playlist_audio"),
+    )
+    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="cancel"))
+    return kb
+
+def make_main_keyboard():
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("📥 Как скачать", callback_data="how_to"),
+        InlineKeyboardButton("🌍 Поддерживаемые сайты", callback_data="sites"),
+        InlineKeyboardButton("❓ Помощь", callback_data="help"),
+    )
+    return kb
+
+def make_admin_keyboard():
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
+        InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast"),
+        InlineKeyboardButton("🔄 Сбросить", callback_data="admin_reset"),
+    )
+    return kb
+
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
     await message.answer(
         "👋 Привет, <b>{}</b>!\n\n"
         "🤖 Я <b>DownAny Bot</b> — скачиваю видео и музыку\n"
         "с любых сайтов прямо в Telegram.\n\n"
-        "📎 Просто отправь мне ссылку на видео!\n\n"
-        "🌍 Поддерживаю <b>1000+ сайтов</b>:\n"
+        "📎 Отправь ссылку на видео или YouTube плейлист!\n\n"
+        "🌍 <b>1000+ сайтов:</b>\n"
         "YouTube • TikTok • Instagram • Twitter/X\n"
-        "ВКонтакте • Rutube • Кинопоиск и другие\n\n"
-        "📦 Размер файла до <b>2 ГБ</b>\n"
-        "⚡️ Лимит: <b>3 запроса в минуту</b>".format(message.from_user.first_name),
+        "ВКонтакте • Rutube • Facebook и другие\n\n"
+        "📦 До <b>2 ГБ</b> | ⚡️ Лимит: <b>3 запроса/мин</b>".format(message.from_user.first_name),
         parse_mode="HTML",
         reply_markup=make_main_keyboard()
     )
@@ -156,7 +169,7 @@ async def cmd_start(message: types.Message):
 @dp.message_handler(commands=["admin"])
 async def cmd_admin(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer("⛔️ У вас нет доступа.")
+        await message.answer("⛔️ Нет доступа.")
         return
     stats = load_stats()
     await message.answer(
@@ -190,12 +203,9 @@ async def process_admin(callback: types.CallbackQuery):
         )
     elif callback.data == "admin_reset":
         save_stats({"total_downloads": 0, "total_users": [], "video_downloads": 0, "audio_downloads": 0, "errors": 0})
-        await callback.answer("✅ Статистика сброшена!", show_alert=True)
+        await callback.answer("✅ Сброшено!", show_alert=True)
     elif callback.data == "admin_broadcast":
-        await callback.message.edit_text(
-            "📢 Используй команду:\n<code>/broadcast Текст</code>",
-            parse_mode="HTML"
-        )
+        await callback.message.edit_text("📢 Используй:\n<code>/broadcast Текст</code>", parse_mode="HTML")
     await callback.answer()
 
 @dp.message_handler(commands=["broadcast"])
@@ -222,19 +232,19 @@ async def process_menu(callback: types.CallbackQuery):
     if callback.data == "how_to":
         await callback.message.edit_text(
             "📎 <b>Как скачать:</b>\n\n"
-            "1️⃣ Скопируй ссылку\n"
+            "1️⃣ Скопируй ссылку на видео или плейлист\n"
             "2️⃣ Отправь мне\n"
             "3️⃣ Выбери формат\n"
-            "4️⃣ Получи файл до 2 ГБ!",
+            "4️⃣ Получи файл!",
             parse_mode="HTML"
         )
     elif callback.data == "sites":
         await callback.message.edit_text(
             "🌍 <b>Поддерживаемые сайты:</b>\n\n"
-            "YouTube • TikTok • Instagram\n"
-            "Twitter/X • Facebook • Vimeo\n"
-            "Twitch • Rutube • ВКонтакте\n"
-            "Кинопоиск • и 1000+ других!",
+            "YouTube (+ плейлисты) • TikTok\n"
+            "Instagram • Twitter/X • Facebook\n"
+            "Vimeo • Twitch • Rutube • ВКонтакте\n"
+            "SoundCloud • и 1000+ других!",
             parse_mode="HTML"
         )
     elif callback.data == "help":
@@ -242,6 +252,7 @@ async def process_menu(callback: types.CallbackQuery):
             "❓ <b>Помощь:</b>\n\n"
             "• Файлы до <b>2 ГБ</b>\n"
             "• Лимит: <b>3 запроса в минуту</b>\n"
+            "• Плейлисты: до <b>20 видео</b> за раз\n"
             "• Большой файл — выбери качество пониже",
             parse_mode="HTML"
         )
@@ -253,13 +264,76 @@ async def process_menu(callback: types.CallbackQuery):
 async def handle_url(message: types.Message):
     url = message.text.strip()
     if not url.startswith(("http://", "https://")):
-        await message.answer("⚠️ Отправь ссылку начинающуюся с http", parse_mode="HTML")
+        await message.answer("⚠️ Отправь ссылку начинающуюся с http")
         return
     if is_spam(message.from_user.id):
         await message.answer("⛔️ Слишком много запросов! Подожди минуту.")
         return
     user_urls[message.from_user.id] = url
-    await message.answer("🎯 Выбери формат:", reply_markup=make_format_keyboard())
+    if is_playlist(url):
+        status = await message.answer("🔍 Получаю информацию о плейлисте...")
+        try:
+            loop = asyncio.get_event_loop()
+            title, count, entries = await loop.run_in_executor(executor_pool, get_playlist_info, url)
+            count = min(count, PLAYLIST_LIMIT)
+            await status.edit_text(
+                f"📋 <b>Плейлист найден!</b>\n\n"
+                f"📌 {title}\n"
+                f"🎬 Видео: <b>{count}</b> (макс. {PLAYLIST_LIMIT})\n\n"
+                f"Выбери что скачать:",
+                parse_mode="HTML",
+                reply_markup=make_playlist_keyboard()
+            )
+        except Exception as e:
+            await status.edit_text(f"❌ Ошибка: {e}")
+    else:
+        await message.answer("🎯 Выбери формат:", reply_markup=make_format_keyboard())
+
+@dp.callback_query_handler(lambda c: c.data.startswith("playlist_"))
+async def process_playlist(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    url = user_urls.get(user_id)
+    if not url:
+        await callback.message.edit_text("⚠️ Сначала отправь ссылку!")
+        return
+    mode = callback.data.split("_")[1]
+    await callback.message.edit_text("⏳ Начинаю скачивать плейлист... Это займёт время.")
+    loop = asyncio.get_event_loop()
+    try:
+        _, count, entries = await loop.run_in_executor(executor_pool, get_playlist_info, url)
+        count = min(count, PLAYLIST_LIMIT)
+        success = 0
+        failed = 0
+        for i, entry in enumerate(entries[:PLAYLIST_LIMIT]):
+            video_url = entry.get("url") or f"https://youtube.com/watch?v={entry.get('id')}"
+            try:
+                await callback.message.edit_text(f"⏳ Скачиваю {i+1}/{count}...")
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    if mode == "video":
+                        filepath, title = await loop.run_in_executor(executor_pool, _download_video, video_url, tmpdir, "720")
+                        with open(filepath, "rb") as f:
+                            await bot.send_video(callback.message.chat.id, f, caption=f"🎬 {title}", timeout=300)
+                        record_download(user_id, "video")
+                    else:
+                        filepath, title = await loop.run_in_executor(executor_pool, _download_audio, video_url, tmpdir)
+                        with open(filepath, "rb") as f:
+                            await bot.send_audio(callback.message.chat.id, f, title=title, caption=f"🎵 {title}", timeout=300)
+                        record_download(user_id, "audio")
+                success += 1
+            except Exception:
+                failed += 1
+                continue
+        await callback.message.edit_text(
+            f"✅ Плейлист скачан!\n\n"
+            f"✔️ Успешно: <b>{success}</b>\n"
+            f"❌ Ошибок: <b>{failed}</b>",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        record_error()
+        await callback.message.edit_text(f"❌ Ошибка: {e}")
+    user_urls.pop(user_id, None)
+    await callback.answer()
 
 @dp.callback_query_handler(lambda c: c.data.startswith("video_") or c.data.startswith("audio_"))
 async def process_download(callback: types.CallbackQuery):
@@ -268,7 +342,7 @@ async def process_download(callback: types.CallbackQuery):
     if not url:
         await callback.message.edit_text("⚠️ Сначала отправь ссылку!")
         return
-    await callback.message.edit_text("⏳ Скачиваю... Подожди.")
+    await callback.message.edit_text("⏳ Скачиваю...")
     loop = asyncio.get_event_loop()
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -304,13 +378,15 @@ async def set_commands():
     await bot.set_my_commands([
         BotCommand("start", "Главное меню"),
         BotCommand("admin", "Админ панель"),
-        BotCommand("stats", "Статистика"),
     ])
 
 async def on_startup(dp):
     await set_commands()
     if ADMIN_ID:
-        await bot.send_message(ADMIN_ID, "🟢 Бот запущен!")
+        try:
+            await bot.send_message(ADMIN_ID, "🟢 Бот запущен!")
+        except:
+            pass
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
