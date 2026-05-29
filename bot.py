@@ -1,4 +1,5 @@
 import os
+import glob
 import tempfile
 import yt_dlp
 from aiogram import Bot, Dispatcher, executor, types
@@ -30,11 +31,20 @@ def download_video(url, output_dir, quality):
         return filename, info.get("title", "video")
 
 def download_audio(url, output_dir):
-    ydl_opts = {"outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"), "format": "bestaudio/best", "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}], "quiet": True, "no_warnings": True}
+    ydl_opts = {
+        "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
+        "format": "bestaudio/best",
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
+        "quiet": True,
+        "no_warnings": True
+    }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         title = info.get("title", "audio")
-        return os.path.join(output_dir, title + ".mp3"), title
+    mp3_files = glob.glob(os.path.join(output_dir, "*.mp3"))
+    if not mp3_files:
+        raise Exception("MP3 файл не найден после конвертации")
+    return mp3_files[0], title
 
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
