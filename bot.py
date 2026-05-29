@@ -2,15 +2,13 @@ import asyncio
 import os
 import tempfile
 import yt_dlp
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
+from aiogram import Bot, Dispatcher, executor, types
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(bot)
 
-def download_media(url: str, output_dir: str) -> str:
+def download_media(url, output_dir):
     ydl_opts = {
         "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
@@ -26,43 +24,30 @@ def download_media(url: str, output_dir: str) -> str:
             filename = filename.rsplit(".", 1)[0] + ".mp4"
         return filename
 
-@dp.message(CommandStart())
+@dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
-    await message.answer(
-        "Привет! 👋\n"
-        "Отправь мне ссылку на видео — скачаю откуда угодно.\n\n"
-        "Поддерживаются: YouTube, TikTok, Instagram, Twitter/X, "
-        "ВКонтакте, Rutube и ещё 1000+ сайтов."
-    )
+    await message.answer("Привет! Отправь ссылку на видео.")
 
-@dp.message(F.text)
+@dp.message_handler()
 async def handle_url(message: types.Message):
     url = message.text.strip()
     if not url.startswith(("http://", "https://")):
-        await message.answer("Пожалуйста, отправь ссылку (начинающуюся с http/https)")
+        await message.answer("Отправь ссылку начинающуюся с http")
         return
-    status_msg = await message.answer("⏳ Скачиваю...")
+    status_msg = await message.answer("Скачиваю...")
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = download_media(url, tmpdir)
             file_size = os.path.getsize(filepath)
             if file_size > 50 * 1024 * 1024:
-                await status_msg.edit_text("❌ Файл больше 50 МБ — Telegram не позволяет.")
+                await status_msg.edit_text("Файл больше 50 МБ")
                 return
-            await status_msg.edit_text("📤 Отправляю...")
+            await status_msg.edit_text("Отправляю...")
             with open(filepath, "rb") as f:
-                await message.answer_video(
-                    video=types.BufferedInputFile(f.read(), filename=os.path.basename(filepath)),
-                    caption="✅ Готово!"
-                )
+                await bot.send_video(message.chat.id, f, caption="Готово!")
         await status_msg.delete()
-    except yt_dlp.utils.DownloadError as e:
-        await status_msg.edit_text(f"❌ Не удалось скачать:\n<code>{e}</code>", parse_mode="HTML")
     except Exception as e:
-        await status_msg.edit_text(f"❌ Ошибка: {e}")
-
-async def main():
-    await dp.start_polling(bot)
+        await status_msg.edit_text(f"Ошибка: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    executor.start_polling(dp, skip_updates=True)

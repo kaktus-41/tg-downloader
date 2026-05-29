@@ -1,3 +1,2 @@
-aiogram==3.7.0
+aiogram==2.25.2
 yt-dlp
-pydantic==1.10.13
