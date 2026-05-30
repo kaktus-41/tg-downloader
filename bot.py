@@ -27,7 +27,7 @@ async def main():
     )
     dp = Dispatcher()
 
-    dp.message.middleware(ThrottlingMiddleware(rate_limit=settings.THROTTLING_RATE))
+    dp.message.middleware(ThrottlingMiddleware(limit=settings.THROTTLING_RATE))
 
     dp.include_router(admin.router)
     dp.include_router(commands.router)
