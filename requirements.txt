@@ -2,4 +2,4 @@ aiogram==3.13.1
 yt-dlp
 curl_cffi
 aiosqlite
-pydantic-setting
+pydantic-settings
