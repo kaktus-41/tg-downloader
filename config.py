@@ -1,13 +1,10 @@
 import os
-from dataclasses import dataclass
 
-@dataclass
 class Settings:
-    bot_token: str = os.getenv("BOT_TOKEN", "")
-    admin_id: int = int(os.getenv("ADMIN_ID", "0"))
-    api_id: str = os.getenv("API_ID", "")
-    api_hash: str = os.getenv("API_HASH", "")
-    local_bot_api_url: str = os.getenv("LOCAL_BOT_API_URL", "http://localhost:8081")
+    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
+    ADMIN_ID: int = int(os.getenv("ADMIN_ID", "0"))
+    API_ID: str = os.getenv("API_ID", "")
+    API_HASH: str = os.getenv("API_HASH", "")
     LOCAL_BOT_API_URL: str = os.getenv("LOCAL_BOT_API_URL", "http://localhost:8081")
 
 settings = Settings()
