@@ -2,8 +2,6 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
 from aiogram.types import BotCommand
 
 from config import settings
@@ -23,20 +21,9 @@ async def set_commands(bot: Bot):
 async def main():
     await init_db()
 
-    # 1. Создаем сервер с обязательным флагом is_local=True
-    local_server = TelegramAPIServer(
-        base=f"{settings.LOCAL_BOT_API_URL}/bot{{token}}",
-        file=f"{settings.LOCAL_BOT_API_URL}/file/bot{{token}}/{{path}}",
-        is_local=True
-    )
-
-    # 2. Подключаем сервер через сессию (правило aiogram 3)
-    session = AiohttpSession(api=local_server)
-
     bot = Bot(
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode="HTML"),
-        session=session
     )
     dp = Dispatcher()
 
@@ -48,7 +35,7 @@ async def main():
 
     if settings.ADMIN_ID:
         try:
-            await bot.send_message(settings.ADMIN_ID, "🟢 Бот запущен! Лимит 50 МБ снят, качаем до 2 ГБ.")
+            await bot.send_message(settings.ADMIN_ID, "🟢 Бот запущен!")
         except Exception:
             pass
 
