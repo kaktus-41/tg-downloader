@@ -26,7 +26,7 @@ def _download_video(url, output_dir, quality):
         "no_warnings": True,
         "geo_bypass": True,
         "nocheckcertificate": True,
-        "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
+        "cookiefile": os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cookies.txt") if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cookies.txt")) else None,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -44,7 +44,7 @@ def _download_audio(url, output_dir):
         "no_warnings": True,
         "geo_bypass": True,
         "nocheckcertificate": True,
-        "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
+        "cookiefile": os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cookies.txt") if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cookies.txt")) else None,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
