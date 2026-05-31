@@ -17,11 +17,20 @@ class DownloadStates(StatesGroup):
 def is_playlist(url: str) -> bool:
     return "playlist" in url or "list=" in url
 
+def is_telegram_link(url: str) -> bool:
+    return "t.me" in url or "telegram.me" in url or "telegram.org" in url
+
 @router.message(F.text.startswith("http://") | F.text.startswith("https://"))
 async def handle_url(message: Message, state: FSMContext):
     url = message.text.strip()
     await state.update_data(current_url=url)
     
+    if is_telegram_link(url):
+        await message.answer("❌ Ссылки из Telegram не поддерживаются.
+Отправь ссылку с YouTube, TikTok, Instagram или другого сайта.")
+        await state.clear()
+        return
+
     if is_playlist(url):
         status = await message.answer("🔍 Получаю информацию о плейлисте...")
         try:
