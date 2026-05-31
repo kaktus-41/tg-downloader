@@ -13,13 +13,16 @@ def save_stats(stats):
     with open(STATS_FILE, "w") as f:
         json.dump(stats, f)
 
-async def log_download(user_id, download_type):
+async def log_download(user_id, download_type, status="success"):
     stats = load_stats()
-    stats["total_downloads"] += 1
-    if str(user_id) not in stats["total_users"]:
-        stats["total_users"].append(str(user_id))
-    if download_type == "video":
-        stats["video_downloads"] += 1
+    if status == "success":
+        stats["total_downloads"] += 1
+        if str(user_id) not in stats["total_users"]:
+            stats["total_users"].append(str(user_id))
+        if download_type == "video":
+            stats["video_downloads"] += 1
+        elif download_type == "audio":
+            stats["audio_downloads"] += 1
     else:
-        stats["audio_downloads"] += 1
+        stats["errors"] += 1
     save_stats(stats)

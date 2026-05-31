@@ -23,7 +23,7 @@ def make_admin_keyboard():
 
 @router.message(Command("admin"))
 async def cmd_admin(message: Message):
-    if message.from_user.id != settings.admin_id:
+    if message.from_user.id != settings.ADMIN_ID:
         await message.answer("⛔️ Нет доступа.")
         return
     stats = load_stats()
@@ -40,7 +40,7 @@ async def cmd_admin(message: Message):
 
 @router.callback_query(lambda c: c.data.startswith("admin_"))
 async def process_admin(callback: CallbackQuery):
-    if callback.from_user.id != settings.admin_id:
+    if callback.from_user.id != settings.ADMIN_ID:
         await callback.answer("⛔️ Нет доступа!", show_alert=True)
         return
     if callback.data == "admin_stats":
